@@ -373,7 +373,8 @@ export default function FixtureGenerator() {
     // Show Round number on second line
     ctx.font = "bold 16px 'DM Sans', Arial, sans-serif"
     ctx.fillStyle = "#e2e8f0"
-    ctx.fillText(`Round ${gameweek}`, centerX, headerY + 12)
+    // ctx.fillText(`Round ${gameweek}`, centerX, headerY + 12)
+    ctx.fillText(roundTitle, centerX, headerY + 12)
 
     const topPadding = 300
     const bottomPadding = 200
