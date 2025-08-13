@@ -13,6 +13,7 @@ interface Player {
   id: string
   name: string
   image: string | null
+  teamImage: string | null
 }
 
 interface Fixture {
@@ -47,7 +48,7 @@ export default function FixtureGenerator() {
     // Create player list for scheduling (numbered 1, 2, 3, etc.)
     const playersForScheduling = [...players]
     if (!isEven) {
-      playersForScheduling.push({ id: "bye", name: "BYE", image: null })
+      playersForScheduling.push({ id: "bye", name: "BYE", image: null, teamImage: null })
     }
 
     console.log(`Generating fixtures for ${playerCount} players`)
@@ -136,26 +137,31 @@ export default function FixtureGenerator() {
       id: `player-${Date.now()}`,
       name: newPlayerName.trim(),
       image: null,
+      teamImage: null,
     }
 
     setPlayers([...players, newPlayer])
     setNewPlayerName("")
   }
 
+  // Handle image upload
+  const handleImageUpload = (playerId: string, file: File, imageType: "player" | "team") => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const imageUrl = e.target?.result as string
+      setPlayers(
+        players.map((p) =>
+          p.id === playerId ? { ...p, [imageType === "player" ? "image" : "teamImage"]: imageUrl } : p,
+        ),
+      )
+    }
+    reader.readAsDataURL(file)
+  }
+
   // Remove player
   const removePlayer = (playerId: string) => {
     setPlayers(players.filter((p) => p.id !== playerId))
     setFixtures([]) // Clear fixtures when players change
-  }
-
-  // Handle image upload
-  const handleImageUpload = (playerId: string, file: File) => {
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      const imageUrl = e.target?.result as string
-      setPlayers(players.map((p) => (p.id === playerId ? { ...p, image: imageUrl } : p)))
-    }
-    reader.readAsDataURL(file)
   }
 
   // Download fixture as image
@@ -374,7 +380,7 @@ export default function FixtureGenerator() {
     ctx.font = "bold 16px 'DM Sans', Arial, sans-serif"
     ctx.fillStyle = "#e2e8f0"
     // ctx.fillText(`Round ${gameweek}`, centerX, headerY + 12)
-    ctx.fillText(roundTitle, centerX, headerY + 12)
+        ctx.fillText(roundTitle, centerX, headerY + 12)
 
     const topPadding = 300
     const bottomPadding = 200
@@ -482,21 +488,32 @@ export default function FixtureGenerator() {
     ctx.textAlign = "center"
     ctx.fillText(player.name.toUpperCase(), x, y + 8)
 
-    if (player.image) {
-      const img = new Image()
-      img.crossOrigin = "anonymous"
+    const promises: Promise<void>[] = []
 
-      return new Promise<void>((resolve) => {
+    // Draw player image with increased size and object-fit contain
+    if (player.image) {
+      const playerImgPromise = new Promise<void>((resolve) => {
+        const img = new Image()
+        img.crossOrigin = "anonymous"
+
         img.onload = () => {
-          const imgSize = 100
+          const imgSize = 140 // Increased from 100 to 140
           const imgX = side === "left" ? bannerX - imgSize - 20 : bannerX + bannerWidth + 20
-          const imgY = bannerY - 10
+          const imgY = bannerY - 25 // Adjusted for larger image
 
           ctx.save()
           ctx.beginPath()
           ctx.arc(imgX + imgSize / 2, imgY + imgSize / 2, imgSize / 2, 0, Math.PI * 2)
           ctx.clip()
-          ctx.drawImage(img, imgX, imgY, imgSize, imgSize)
+
+          // Object-fit: contain implementation
+          const scale = Math.min(imgSize / img.width, imgSize / img.height)
+          const scaledWidth = img.width * scale
+          const scaledHeight = img.height * scale
+          const drawX = imgX + (imgSize - scaledWidth) / 2
+          const drawY = imgY + (imgSize - scaledHeight) / 2
+
+          ctx.drawImage(img, drawX, drawY, scaledWidth, scaledHeight)
           ctx.restore()
 
           ctx.strokeStyle = "#ffffff"
@@ -508,11 +525,61 @@ export default function FixtureGenerator() {
           resolve()
         }
         img.onerror = () => resolve()
-        img.src = player.image
+        img.src = player.image!
       })
-    } else {
-      return Promise.resolve()
+      promises.push(playerImgPromise)
     }
+
+    // Draw team image as a badge with improved sizing
+    if (player.teamImage) {
+      const teamImgPromise = new Promise<void>((resolve) => {
+        const teamImg = new Image()
+        teamImg.crossOrigin = "anonymous"
+
+        teamImg.onload = () => {
+          const teamImgSize = 60 // Increased from 40 to 60
+          const playerImgSize = 130
+          const playerImgX = side === "left" ? bannerX - playerImgSize - 20 : bannerX + bannerWidth + 20
+          const teamImgX = playerImgX + (side === "left" ? playerImgSize - teamImgSize + 5 : -5)
+          const teamImgY = bannerY - 25 + playerImgSize - teamImgSize + 5
+
+          // Draw white circle background for team logo
+          ctx.fillStyle = "#ffffff"
+          ctx.beginPath()
+          ctx.arc(teamImgX + teamImgSize / 2, teamImgY + teamImgSize / 2, teamImgSize / 2 + 2, 0, Math.PI * 2)
+          ctx.fill()
+
+          ctx.save()
+          ctx.beginPath()
+          ctx.arc(teamImgX + teamImgSize / 2, teamImgY + teamImgSize / 2, teamImgSize / 2, 0, Math.PI * 2)
+          ctx.clip()
+
+          // Object-fit: contain for team image
+          const scale = Math.min(teamImgSize / teamImg.width, teamImgSize / teamImg.height)
+          const scaledWidth = teamImg.width * scale
+          const scaledHeight = teamImg.height * scale
+          const drawX = teamImgX + (teamImgSize - scaledWidth) / 2
+          const drawY = teamImgY + (teamImgSize - scaledHeight) / 2
+
+          ctx.drawImage(teamImg, drawX, drawY, scaledWidth, scaledHeight)
+          ctx.restore()
+
+          // Border for team image
+          ctx.strokeStyle = "#1e40af"
+          ctx.lineWidth = 2
+          ctx.beginPath()
+          ctx.arc(teamImgX + teamImgSize / 2, teamImgY + teamImgSize / 2, teamImgSize / 2, 0, Math.PI * 2)
+          ctx.stroke()
+
+          resolve()
+        }
+        teamImg.onerror = () => resolve()
+        teamImg.src = player.teamImage!
+      })
+      promises.push(teamImgPromise)
+    }
+
+    await Promise.all(promises)
   }
 
   // Draw individual player in gameweek poster
@@ -541,13 +608,16 @@ export default function FixtureGenerator() {
     const textX = side === "left" ? bannerX + bannerWidth - 20 : bannerX + 20
     ctx.fillText(player.name.toUpperCase(), textX, y + 8)
 
-    if (player.image) {
-      const img = new Image()
-      img.crossOrigin = "anonymous"
+    const promises: Promise<void>[] = []
 
-      return new Promise<void>((resolve) => {
+    // Draw player image with increased size and object-fit contain
+    if (player.image) {
+      const playerImgPromise = new Promise<void>((resolve) => {
+        const img = new Image()
+        img.crossOrigin = "anonymous"
+
         img.onload = () => {
-          const imgSize = 80
+          const imgSize = 100 // Increased from 80 to 100
           const imgX = side === "left" ? bannerX - imgSize - 10 : bannerX + bannerWidth + 10
           const imgY = y - imgSize / 2
 
@@ -555,7 +625,15 @@ export default function FixtureGenerator() {
           ctx.beginPath()
           ctx.arc(imgX + imgSize / 2, imgY + imgSize / 2, imgSize / 2, 0, Math.PI * 2)
           ctx.clip()
-          ctx.drawImage(img, imgX, imgY, imgSize, imgSize)
+
+          // Object-fit: contain implementation
+          const scale = Math.min(imgSize / img.width, imgSize / img.height)
+          const scaledWidth = img.width * scale
+          const scaledHeight = img.height * scale
+          const drawX = imgX + (imgSize - scaledWidth) / 2
+          const drawY = imgY + (imgSize - scaledHeight) / 2
+
+          ctx.drawImage(img, drawX, drawY, scaledWidth, scaledHeight)
           ctx.restore()
 
           ctx.strokeStyle = "#ffffff"
@@ -567,11 +645,61 @@ export default function FixtureGenerator() {
           resolve()
         }
         img.onerror = () => resolve()
-        img.src = player.image
+        img.src = player.image!
       })
-    } else {
-      return Promise.resolve()
+      promises.push(playerImgPromise)
     }
+
+    // Draw team image as a badge with improved sizing
+    if (player.teamImage) {
+      const teamImgPromise = new Promise<void>((resolve) => {
+        const teamImg = new Image()
+        teamImg.crossOrigin = "anonymous"
+
+        teamImg.onload = () => {
+          const teamImgSize = 40 // Increased from 32 to 40
+          const playerImgSize = 100
+          const playerImgX = side === "left" ? bannerX - playerImgSize - 10 : bannerX + bannerWidth + 10
+          const teamImgX = playerImgX + (side === "left" ? playerImgSize - teamImgSize + 3 : -3)
+          const teamImgY = y - playerImgSize / 2 + playerImgSize - teamImgSize + 3
+
+          // Draw white circle background for team logo
+          ctx.fillStyle = "#ffffff"
+          ctx.beginPath()
+          ctx.arc(teamImgX + teamImgSize / 2, teamImgY + teamImgSize / 2, teamImgSize / 2 + 2, 0, Math.PI * 2)
+          ctx.fill()
+
+          ctx.save()
+          ctx.beginPath()
+          ctx.arc(teamImgX + teamImgSize / 2, teamImgY + teamImgSize / 2, teamImgSize / 2, 0, Math.PI * 2)
+          ctx.clip()
+
+          // Object-fit: contain for team image
+          const scale = Math.min(teamImgSize / teamImg.width, teamImgSize / teamImg.height)
+          const scaledWidth = teamImg.width * scale
+          const scaledHeight = teamImg.height * scale
+          const drawX = teamImgX + (teamImgSize - scaledWidth) / 2
+          const drawY = teamImgY + (teamImgSize - scaledHeight) / 2
+
+          ctx.drawImage(teamImg, drawX, drawY, scaledWidth, scaledHeight)
+          ctx.restore()
+
+          // Border for team image
+          ctx.strokeStyle = "#1e40af"
+          ctx.lineWidth = 2
+          ctx.beginPath()
+          ctx.arc(teamImgX + teamImgSize / 2, teamImgY + teamImgSize / 2, teamImgSize / 2, 0, Math.PI * 2)
+          ctx.stroke()
+
+          resolve()
+        }
+        teamImg.onerror = () => resolve()
+        teamImg.src = player.teamImage!
+      })
+      promises.push(teamImgPromise)
+    }
+
+    await Promise.all(promises)
   }
 
   // Draw Champions League ball
@@ -697,12 +825,22 @@ export default function FixtureGenerator() {
 
                     {/* Player Image */}
                     <div className="space-y-2">
+                      <Label className="text-slate-300 text-sm font-medium">Player Image</Label>
                       {player.image ? (
-                        <img
-                          src={player.image || "/placeholder.svg"}
-                          alt={player.name}
-                          className="w-16 h-16 rounded-full object-cover mx-auto"
-                        />
+                        <div className="relative w-16 h-16 mx-auto">
+                          <img
+                            src={player.image || "/placeholder.svg"}
+                            alt={player.name}
+                            className="w-16 h-16 rounded-full object-cover"
+                          />
+                          {player.teamImage && (
+                            <img
+                              src={player.teamImage || "/placeholder.svg"}
+                              alt={`${player.name} team`}
+                              className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full object-cover border-2 border-white bg-white"
+                            />
+                          )}
+                        </div>
                       ) : (
                         <div className="w-16 h-16 rounded-full bg-slate-600 mx-auto flex items-center justify-center">
                           <span className="text-slate-400 text-xs">No Image</span>
@@ -714,17 +852,51 @@ export default function FixtureGenerator() {
                         accept="image/*"
                         onChange={(e) => {
                           const file = e.target.files?.[0]
-                          if (file) handleImageUpload(player.id, file)
+                          if (file) handleImageUpload(player.id, file, "player")
                         }}
                         className="hidden"
-                        id={`upload-${player.id}`}
+                        id={`upload-player-${player.id}`}
                       />
                       <Label
-                        htmlFor={`upload-${player.id}`}
+                        htmlFor={`upload-player-${player.id}`}
                         className="cursor-pointer flex items-center justify-center gap-1 text-xs text-blue-400 hover:text-blue-300"
                       >
                         <Upload className="w-3 h-3" />
-                        Upload Image
+                        Upload Player Image
+                      </Label>
+                    </div>
+
+                    {/* Team Image */}
+                    <div className="space-y-2">
+                      <Label className="text-slate-300 text-sm font-medium">Team Logo</Label>
+                      {player.teamImage ? (
+                        <img
+                          src={player.teamImage || "/placeholder.svg"}
+                          alt={`${player.name} team`}
+                          className="w-12 h-12 rounded-full object-cover mx-auto border-2 border-slate-500"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded-full bg-slate-600 mx-auto flex items-center justify-center">
+                          <span className="text-slate-400 text-xs">No Logo</span>
+                        </div>
+                      )}
+
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0]
+                          if (file) handleImageUpload(player.id, file, "team")
+                        }}
+                        className="hidden"
+                        id={`upload-team-${player.id}`}
+                      />
+                      <Label
+                        htmlFor={`upload-team-${player.id}`}
+                        className="cursor-pointer flex items-center justify-center gap-1 text-xs text-green-400 hover:text-green-300"
+                      >
+                        <Upload className="w-3 h-3" />
+                        Upload Team Logo
                       </Label>
                     </div>
                   </CardContent>
