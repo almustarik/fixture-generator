@@ -173,8 +173,8 @@ export default function FixtureGenerator() {
     if (!ctx) return
 
     // Set canvas size
-    canvas.width = 1200
-    canvas.height = 800
+    canvas.width = 1600
+    canvas.height = 900
 
     try {
       // Try to load background image with fallback
@@ -203,7 +203,7 @@ export default function FixtureGenerator() {
 
     // Set canvas size to match reference images
     canvas.width = 1920
-    canvas.height = 1080
+    canvas.height = 1400
 
     try {
       // Try to load background image with fallback
@@ -241,7 +241,7 @@ export default function FixtureGenerator() {
 
         // Set canvas size
         canvas.width = 1920
-        canvas.height = 1080
+        canvas.height = 1400
 
         try {
           // Generate poster
@@ -329,8 +329,8 @@ export default function FixtureGenerator() {
 
   // Draw fixture on canvas
   const drawFixture = async (ctx: CanvasRenderingContext2D, fixture: Fixture) => {
-    const centerX = 600
-    const centerY = 400
+    const centerX = 800 // Center of 1600px canvas
+    const centerY = 450 // Center of 900px canvas
 
     // Draw VS text
     ctx.fillStyle = "#64748b"
@@ -346,8 +346,8 @@ export default function FixtureGenerator() {
 
     // Wait for both players to be drawn
     await Promise.all([
-      drawPlayer(ctx, fixture.player1, centerX - 300, centerY, "left"),
-      drawPlayer(ctx, fixture.player2, centerX + 300, centerY, "right"),
+      drawPlayer(ctx, fixture.player1, centerX - 400, centerY, "left"),
+      drawPlayer(ctx, fixture.player2, centerX + 400, centerY, "right"),
     ])
   }
 
@@ -380,28 +380,28 @@ export default function FixtureGenerator() {
     ctx.font = "bold 16px 'DM Sans', Arial, sans-serif"
     ctx.fillStyle = "#e2e8f0"
     // ctx.fillText(`Round ${gameweek}`, centerX, headerY + 12)
-        ctx.fillText(roundTitle, centerX, headerY + 12)
+    ctx.fillText(roundTitle, centerX, headerY + 12)
 
-    const topPadding = 300
+    const topPadding = 350
     const bottomPadding = 200
     const ballRadius = 60
     const ballReservedSpace = ballRadius + 40 // Extra padding around ball
-    const availableHeight = 1080 - topPadding - bottomPadding - ballReservedSpace
+    const availableHeight = 1400 - topPadding - bottomPadding - ballReservedSpace
 
-    const totalContentHeight = fixtures.length * 80 + (fixtures.length - 1) * 20
+    const totalContentHeight = fixtures.length * 100 + (fixtures.length - 1) * 25
     const extraSpace = Math.max(0, availableHeight - totalContentHeight)
-    const matchSpacing = Math.max(15, 20 + Math.floor(extraSpace / (fixtures.length + 1))) // Minimum 15px spacing
+    const matchSpacing = Math.max(25, 25 + Math.floor(extraSpace / (fixtures.length + 1))) // Minimum 25px spacing
 
     const startY = topPadding + Math.floor(extraSpace / 2)
 
     console.log(`Drawing ${fixtures.length} fixtures for gameweek ${gameweek}`)
     console.log(`Reserved space for ball: ${ballReservedSpace}px, available height: ${availableHeight}px`)
 
-    const ballY = 1080 - bottomPadding / 2
+    const ballY = 1400 - bottomPadding / 2
     await drawChampionsLeagueBall(ctx, centerX, ballY)
 
     const matchPromises = fixtures.map((fixture, index) => {
-      const matchY = startY + index * (80 + matchSpacing)
+      const matchY = startY + index * (100 + matchSpacing)
       return drawSingleMatch(ctx, fixture, centerX, matchY)
     })
 
@@ -497,7 +497,7 @@ export default function FixtureGenerator() {
         img.crossOrigin = "anonymous"
 
         img.onload = () => {
-          const imgSize = 140 // Increased from 100 to 140
+          const imgSize = 130 // Increased from 100 to 130
           const imgX = side === "left" ? bannerX - imgSize - 20 : bannerX + bannerWidth + 20
           const imgY = bannerY - 25 // Adjusted for larger image
 
@@ -537,7 +537,7 @@ export default function FixtureGenerator() {
         teamImg.crossOrigin = "anonymous"
 
         teamImg.onload = () => {
-          const teamImgSize = 60 // Increased from 40 to 60
+          const teamImgSize = 50 // Increased from 40 to 50
           const playerImgSize = 130
           const playerImgX = side === "left" ? bannerX - playerImgSize - 20 : bannerX + bannerWidth + 20
           const teamImgX = playerImgX + (side === "left" ? playerImgSize - teamImgSize + 5 : -5)
