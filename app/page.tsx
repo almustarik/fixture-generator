@@ -5,23 +5,12 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
-import { Trash2, Download, Plus, Upload } from "lucide-react"
+import { Trash2, Download, Plus, Upload, Users, X } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import JSZip from "jszip"
-
-interface Player {
-  id: string
-  name: string
-  image: string | null
-  teamImage: string | null
-}
-
-interface Fixture {
-  id: string
-  gameweek: number
-  player1: Player
-  player2: Player
-}
+import { dummyPlayers, dummyRoundTitle } from "@/lib/dummy-data"
+import { renderGameweekPoster, renderMatchPoster } from "@/lib/poster-renderer"
+import type { Fixture, Player } from "@/lib/types"
 
 export default function FixtureGenerator() {
   const [players, setPlayers] = useState<Player[]>([])
@@ -30,10 +19,8 @@ export default function FixtureGenerator() {
   const [selectedRound, setSelectedRound] = useState<number>(1)
   const [roundTitle, setRoundTitle] = useState("")
   const [homeAwayMode, setHomeAwayMode] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
-  // Generate round-robin fixtures with proper gameweek organization
   const generateFixtures = () => {
     if (players.length < 2) return
 
@@ -42,25 +29,19 @@ export default function FixtureGenerator() {
 
     const playerCount = players.length
     const isEven = playerCount % 2 === 0
-    const totalPlayers = isEven ? playerCount : playerCount + 1 // Add dummy player for odd numbers
+    const totalPlayers = isEven ? playerCount : playerCount + 1
     const baseRounds = totalPlayers - 1
 
-    // Create player list for scheduling (numbered 1, 2, 3, etc.)
     const playersForScheduling = [...players]
     if (!isEven) {
       playersForScheduling.push({ id: "bye", name: "BYE", image: null, teamImage: null })
     }
 
-    console.log(`Generating fixtures for ${playerCount} players`)
-    console.log(`Base rounds: ${baseRounds}, Home/Away mode: ${homeAwayMode}`)
-
     const firstHalfFixtures: Fixture[] = []
 
-    // Standard round-robin algorithm
     for (let round = 0; round < baseRounds; round++) {
       const roundFixtures: Fixture[] = []
 
-      // Create matches for this round
       for (let i = 0; i < totalPlayers / 2; i++) {
         const player1Index = i
         const player2Index = totalPlayers - 1 - i
@@ -68,7 +49,6 @@ export default function FixtureGenerator() {
         const player1 = playersForScheduling[player1Index]
         const player2 = playersForScheduling[player2Index]
 
-        // Skip if either player is the "bye" player
         if (player1.id !== "bye" && player2.id !== "bye") {
           roundFixtures.push({
             id: `fixture-${fixtureId}`,
@@ -80,22 +60,16 @@ export default function FixtureGenerator() {
         }
       }
 
-      console.log(`Round ${round + 1}: Generated ${roundFixtures.length} matches`)
       firstHalfFixtures.push(...roundFixtures)
       newFixtures.push(...roundFixtures)
 
-      // Rotate players (keep first player fixed, rotate others clockwise)
       if (totalPlayers > 2) {
         const lastPlayer = playersForScheduling.pop()!
         playersForScheduling.splice(1, 0, lastPlayer)
       }
     }
 
-    // Add home/away fixtures if enabled
     if (homeAwayMode) {
-      console.log(`Generating second half (home/away reversed) - ${firstHalfFixtures.length} fixtures to reverse`)
-
-      // Group first half fixtures by gameweek
       const firstHalfByGameweek: Record<number, Fixture[]> = {}
       firstHalfFixtures.forEach((fixture) => {
         if (!firstHalfByGameweek[fixture.gameweek]) {
@@ -104,32 +78,25 @@ export default function FixtureGenerator() {
         firstHalfByGameweek[fixture.gameweek].push(fixture)
       })
 
-      // Create reversed fixtures for each gameweek
       for (let gameweek = 1; gameweek <= baseRounds; gameweek++) {
         const originalFixtures = firstHalfByGameweek[gameweek] || []
 
         originalFixtures.forEach((originalFixture) => {
-          // Create reversed fixture (home/away swapped)
-          const reversedFixture: Fixture = {
+          newFixtures.push({
             id: `fixture-${fixtureId}`,
-            gameweek: baseRounds + gameweek, // Second half gameweek numbers
-            player1: originalFixture.player2, // Swap players for home/away
-            player2: originalFixture.player1, // Swap players for home/away
-          }
-
-          newFixtures.push(reversedFixture)
+            gameweek: baseRounds + gameweek,
+            player1: originalFixture.player2,
+            player2: originalFixture.player1,
+          })
           fixtureId++
         })
-
-        console.log(`Round ${baseRounds + gameweek} (Away): Generated ${originalFixtures.length} reversed matches`)
       }
     }
 
-    console.log(`Total fixtures generated: ${newFixtures.length}`)
+    setSelectedRound(1)
     setFixtures(newFixtures)
   }
 
-  // Add new player
   const addPlayer = () => {
     if (!newPlayerName.trim()) return
 
@@ -144,78 +111,69 @@ export default function FixtureGenerator() {
     setNewPlayerName("")
   }
 
-  // Handle image upload
+  const updatePlayer = (playerId: string, updates: Partial<Omit<Player, "id">>) => {
+    const applyUpdate = (player: Player) => (player.id === playerId ? { ...player, ...updates } : player)
+    setPlayers((current) => current.map(applyUpdate))
+    setFixtures((current) =>
+      current.map((fixture) => ({
+        ...fixture,
+        player1: applyUpdate(fixture.player1),
+        player2: applyUpdate(fixture.player2),
+      })),
+    )
+  }
+
   const handleImageUpload = (playerId: string, file: File, imageType: "player" | "team") => {
     const reader = new FileReader()
     reader.onload = (e) => {
       const imageUrl = e.target?.result as string
-      setPlayers(
-        players.map((p) =>
-          p.id === playerId ? { ...p, [imageType === "player" ? "image" : "teamImage"]: imageUrl } : p,
-        ),
-      )
+      updatePlayer(playerId, { [imageType === "player" ? "image" : "teamImage"]: imageUrl })
     }
     reader.readAsDataURL(file)
   }
 
-  // Remove player
   const removePlayer = (playerId: string) => {
     setPlayers(players.filter((p) => p.id !== playerId))
-    setFixtures([]) // Clear fixtures when players change
+    setFixtures([])
   }
 
-  // Download fixture as image
+  const addDummyPlayers = () => {
+    const existingIds = new Set(players.map((player) => player.id))
+    const playersToAdd = dummyPlayers.filter((player) => !existingIds.has(player.id))
+    if (playersToAdd.length === 0) return
+
+    setPlayers([...players, ...playersToAdd])
+    setFixtures([])
+    setSelectedRound(1)
+    if (!roundTitle.trim()) {
+      setRoundTitle(dummyRoundTitle)
+    }
+  }
+
   const downloadFixture = async (fixture: Fixture) => {
     const canvas = canvasRef.current
     if (!canvas) return
 
-    const ctx = canvas.getContext("2d")
-    if (!ctx) return
-
-    // Set canvas size
-    canvas.width = 1600
-    canvas.height = 900
-
     try {
-      // Try to load background image with fallback
-      await loadBackgroundImage(ctx, canvas.width, canvas.height)
-
-      // Draw fixture and wait for all images to load
-      await drawFixture(ctx, fixture)
-
-      // Download
+      await renderMatchPoster(canvas, fixture)
       const link = document.createElement("a")
       link.download = `${fixture.player1.name}-vs-${fixture.player2.name}-GW${fixture.gameweek}.png`
-      link.href = canvas.toDataURL()
+      link.href = canvas.toDataURL("image/png")
       link.click()
     } catch (error) {
       console.error("Error generating fixture:", error)
     }
   }
 
-  // Download gameweek poster (all matches in one image)
   const downloadGameweekPoster = async (gameweek: number, gameweekFixtures: Fixture[]) => {
     const canvas = canvasRef.current
     if (!canvas) return
 
-    const ctx = canvas.getContext("2d")
-    if (!ctx) return
-
-    // Set canvas size to match reference images
-    canvas.width = 1920
-    canvas.height = 1400
-
     try {
-      // Try to load background image with fallback
-      await loadBackgroundImage(ctx, canvas.width, canvas.height)
-
-      // Draw all fixtures for this gameweek and wait for completion
-      await drawGameweekFixtures(ctx, gameweekFixtures, gameweek)
-
-      // Download
+      await renderGameweekPoster(canvas, gameweekFixtures, gameweek, roundTitle)
       const link = document.createElement("a")
       link.download = `Gameweek-${gameweek}-Fixtures.png`
-      link.href = canvas.toDataURL()
+      link.href = canvas.toDataURL("image/png")
       link.click()
     } catch (error) {
       console.error("Error generating gameweek poster:", error)
@@ -226,506 +184,39 @@ export default function FixtureGenerator() {
     if (availableRounds.length === 0) return
 
     const zip = new JSZip()
+    const canvas = canvasRef.current
+    if (!canvas) return
 
-    // Generate all posters and add to zip
-    for (let i = 0; i < availableRounds.length; i++) {
-      const gameweek = availableRounds[i]
+    for (const gameweek of availableRounds) {
       const gameweekFixtures = fixturesByGameweek[gameweek]
+      if (!gameweekFixtures) continue
 
-      if (gameweekFixtures) {
-        const canvas = canvasRef.current
-        if (!canvas) continue
-
-        const ctx = canvas.getContext("2d")
-        if (!ctx) continue
-
-        // Set canvas size
-        canvas.width = 1920
-        canvas.height = 1400
-
-        try {
-          // Generate poster
-          await loadBackgroundImage(ctx, canvas.width, canvas.height)
-          await drawGameweekFixtures(ctx, gameweekFixtures, gameweek)
-
-          // Convert canvas to blob and add to zip
-          const blob = await new Promise<Blob>((resolve) => {
-            canvas.toBlob((blob) => {
-              resolve(blob!)
-            }, "image/png")
-          })
-
-          zip.file(`Gameweek-${gameweek}-Fixtures.png`, blob)
-        } catch (error) {
-          console.error(`Error generating gameweek ${gameweek} poster:`, error)
-        }
+      try {
+        await renderGameweekPoster(canvas, gameweekFixtures, gameweek, roundTitle)
+        const blob = await new Promise<Blob>((resolve, reject) => {
+          canvas.toBlob((result) => {
+            if (result) resolve(result)
+            else reject(new Error("Failed to create poster blob"))
+          }, "image/png")
+        })
+        zip.file(`Gameweek-${gameweek}-Fixtures.png`, blob)
+      } catch (error) {
+        console.error(`Error generating gameweek ${gameweek} poster:`, error)
       }
     }
 
-    // Generate and download zip file
     try {
       const zipBlob = await zip.generateAsync({ type: "blob" })
       const link = document.createElement("a")
       link.href = URL.createObjectURL(zipBlob)
       link.download = `All-Fixture-Posters.zip`
       link.click()
-
-      // Clean up object URL
       setTimeout(() => URL.revokeObjectURL(link.href), 100)
     } catch (error) {
       console.error("Error creating zip file:", error)
     }
   }
 
-  // Load background image with fallback
-  const loadBackgroundImage = async (ctx: CanvasRenderingContext2D, width: number, height: number): Promise<void> => {
-    return new Promise((resolve) => {
-      const bgImg = new Image()
-      bgImg.crossOrigin = "anonymous"
-
-      bgImg.onload = () => {
-        try {
-          // Draw background image
-          ctx.drawImage(bgImg, 0, 0, width, height)
-
-          // Add dark overlay for better text visibility
-          ctx.fillStyle = "rgba(0, 0, 0, 0.3)"
-          ctx.fillRect(0, 0, width, height)
-
-          resolve()
-        } catch (error) {
-          console.error("Error drawing background image:", error)
-          drawFallbackBackground(ctx, width, height)
-          resolve()
-        }
-      }
-
-      bgImg.onerror = () => {
-        console.warn("Background image failed to load, using fallback")
-        drawFallbackBackground(ctx, width, height)
-        resolve()
-      }
-
-      // Use the new UEFA Champions League background
-      bgImg.src = "/fixture-bg.jpg"
-    })
-  }
-
-  // Draw fallback background when image fails to load
-  const drawFallbackBackground = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
-    // Create gradient background similar to Champions League theme
-    const gradient = ctx.createLinearGradient(0, 0, 0, height)
-    gradient.addColorStop(0, "#1e3a8a") // Dark blue
-    gradient.addColorStop(0.5, "#3730a3") // Purple-blue
-    gradient.addColorStop(1, "#1e40af") // Blue
-
-    ctx.fillStyle = gradient
-    ctx.fillRect(0, 0, width, height)
-
-    // Add some texture with subtle overlay
-    ctx.fillStyle = "rgba(0, 0, 0, 0.3)"
-    ctx.fillRect(0, 0, width, height)
-  }
-
-  // Draw fixture on canvas
-  const drawFixture = async (ctx: CanvasRenderingContext2D, fixture: Fixture) => {
-    const centerX = 800 // Center of 1600px canvas
-    const centerY = 450 // Center of 900px canvas
-
-    // Draw VS text
-    ctx.fillStyle = "#64748b"
-    ctx.font = "bold 48px 'Space Grotesk', Arial, sans-serif"
-    ctx.textAlign = "center"
-    ctx.fillText("VS", centerX, centerY + 15)
-
-    // Draw gameweek info
-    ctx.fillStyle = "#ffffff"
-    ctx.font = "bold 32px 'Space Grotesk', Arial, sans-serif"
-    ctx.textAlign = "center"
-    ctx.fillText(`GAMEWEEK ${fixture.gameweek}`, centerX, 150)
-
-    // Wait for both players to be drawn
-    await Promise.all([
-      drawPlayer(ctx, fixture.player1, centerX - 400, centerY, "left"),
-      drawPlayer(ctx, fixture.player2, centerX + 400, centerY, "right"),
-    ])
-  }
-
-  // Draw all fixtures for a gameweek
-  const drawGameweekFixtures = async (ctx: CanvasRenderingContext2D, fixtures: Fixture[], gameweek: number) => {
-    const centerX = 960 // Center of 1920px canvas
-
-    const headerRadius = 80
-    const headerY = 120
-
-    // Main header circle background
-    ctx.fillStyle = "rgba(30, 64, 175, 0.95)" // Blue circle
-    ctx.beginPath()
-    ctx.arc(centerX, headerY, headerRadius, 0, Math.PI * 2)
-    ctx.fill()
-
-    // Header border
-    ctx.strokeStyle = "rgba(59, 130, 246, 0.8)"
-    ctx.lineWidth = 3
-    ctx.stroke()
-
-    ctx.fillStyle = "#ffffff"
-    ctx.font = "bold 24px 'Space Grotesk', Arial, sans-serif"
-    ctx.textAlign = "center"
-
-    // Show GW number on first line
-    ctx.fillText(`GW ${gameweek}`, centerX, headerY - 8)
-
-    // Show Round number on second line
-    ctx.font = "bold 16px 'DM Sans', Arial, sans-serif"
-    ctx.fillStyle = "#e2e8f0"
-    // ctx.fillText(`Round ${gameweek}`, centerX, headerY + 12)
-    ctx.fillText(roundTitle, centerX, headerY + 12)
-
-    const topPadding = 350
-    const bottomPadding = 200
-    const ballRadius = 60
-    const ballReservedSpace = ballRadius + 40 // Extra padding around ball
-    const availableHeight = 1400 - topPadding - bottomPadding - ballReservedSpace
-
-    const totalContentHeight = fixtures.length * 100 + (fixtures.length - 1) * 25
-    const extraSpace = Math.max(0, availableHeight - totalContentHeight)
-    const matchSpacing = Math.max(25, 25 + Math.floor(extraSpace / (fixtures.length + 1))) // Minimum 25px spacing
-
-    const startY = topPadding + Math.floor(extraSpace / 2)
-
-    console.log(`Drawing ${fixtures.length} fixtures for gameweek ${gameweek}`)
-    console.log(`Reserved space for ball: ${ballReservedSpace}px, available height: ${availableHeight}px`)
-
-    const ballY = 1400 - bottomPadding / 2
-    await drawChampionsLeagueBall(ctx, centerX, ballY)
-
-    const matchPromises = fixtures.map((fixture, index) => {
-      const matchY = startY + index * (100 + matchSpacing)
-      return drawSingleMatch(ctx, fixture, centerX, matchY)
-    })
-
-    await Promise.all(matchPromises)
-  }
-
-  // Draw individual match in the gameweek poster
-  const drawSingleMatch = async (ctx: CanvasRenderingContext2D, fixture: Fixture, centerX: number, y: number) => {
-    const vsRadius = 35
-
-    const gradient = ctx.createRadialGradient(centerX, y, 0, centerX, y, vsRadius)
-    gradient.addColorStop(0, "#60a5fa") // Lighter blue center
-    gradient.addColorStop(0.7, "#3b82f6") // Medium blue
-    gradient.addColorStop(1, "#1e40af") // Darker blue edge
-
-    ctx.fillStyle = gradient
-    ctx.beginPath()
-    ctx.arc(centerX, y, vsRadius, 0, Math.PI * 2)
-    ctx.fill()
-
-    ctx.shadowColor = "rgba(59, 130, 246, 0.5)"
-    ctx.shadowBlur = 10
-    ctx.shadowOffsetX = 0
-    ctx.shadowOffsetY = 0
-
-    ctx.strokeStyle = "#93c5fd"
-    ctx.lineWidth = 3
-    ctx.stroke()
-
-    ctx.shadowColor = "transparent"
-    ctx.shadowBlur = 0
-
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.3)"
-    ctx.lineWidth = 1
-    ctx.beginPath()
-    ctx.arc(centerX, y, vsRadius - 3, 0, Math.PI * 2)
-    ctx.stroke()
-
-    ctx.fillStyle = "#ffffff"
-    ctx.font = "bold 20px 'Space Grotesk', Arial, sans-serif"
-    ctx.textAlign = "center"
-    ctx.textBaseline = "middle"
-
-    ctx.shadowColor = "rgba(0, 0, 0, 0.5)"
-    ctx.shadowBlur = 2
-    ctx.shadowOffsetX = 1
-    ctx.shadowOffsetY = 1
-
-    ctx.fillText("VS", centerX, y)
-
-    ctx.shadowColor = "transparent"
-    ctx.shadowBlur = 0
-    ctx.shadowOffsetX = 0
-    ctx.shadowOffsetY = 0
-
-    await Promise.all([
-      drawPlayerInGameweek(ctx, fixture.player1, centerX - 380, y, "left"),
-      drawPlayerInGameweek(ctx, fixture.player2, centerX + 380, y, "right"),
-    ])
-  }
-
-  // Draw individual player
-  const drawPlayer = async (
-    ctx: CanvasRenderingContext2D,
-    player: Player,
-    x: number,
-    y: number,
-    side: "left" | "right",
-  ) => {
-    const bannerWidth = 350
-    const bannerHeight = 80
-    const bannerX = side === "left" ? x - bannerWidth / 2 : x - bannerWidth / 2
-    const bannerY = y - bannerHeight / 2
-
-    ctx.fillStyle = "#1e40af"
-    ctx.fillRect(bannerX, bannerY, bannerWidth, bannerHeight)
-
-    ctx.strokeStyle = "#3b82f6"
-    ctx.lineWidth = 3
-    ctx.strokeRect(bannerX, bannerY, bannerWidth, bannerHeight)
-
-    ctx.fillStyle = "#ffffff"
-    ctx.font = "bold 28px 'DM Sans', Arial, sans-serif"
-    ctx.textAlign = "center"
-    ctx.fillText(player.name.toUpperCase(), x, y + 8)
-
-    const promises: Promise<void>[] = []
-
-    // Draw player image with increased size and object-fit contain
-    if (player.image) {
-      const playerImgPromise = new Promise<void>((resolve) => {
-        const img = new Image()
-        img.crossOrigin = "anonymous"
-
-        img.onload = () => {
-          const imgSize = 130 // Increased from 100 to 130
-          const imgX = side === "left" ? bannerX - imgSize - 20 : bannerX + bannerWidth + 20
-          const imgY = bannerY - 25 // Adjusted for larger image
-
-          ctx.save()
-          ctx.beginPath()
-          ctx.arc(imgX + imgSize / 2, imgY + imgSize / 2, imgSize / 2, 0, Math.PI * 2)
-          ctx.clip()
-
-          // Object-fit: contain implementation
-          const scale = Math.min(imgSize / img.width, imgSize / img.height)
-          const scaledWidth = img.width * scale
-          const scaledHeight = img.height * scale
-          const drawX = imgX + (imgSize - scaledWidth) / 2
-          const drawY = imgY + (imgSize - scaledHeight) / 2
-
-          ctx.drawImage(img, drawX, drawY, scaledWidth, scaledHeight)
-          ctx.restore()
-
-          ctx.strokeStyle = "#ffffff"
-          ctx.lineWidth = 4
-          ctx.beginPath()
-          ctx.arc(imgX + imgSize / 2, imgY + imgSize / 2, imgSize / 2, 0, Math.PI * 2)
-          ctx.stroke()
-
-          resolve()
-        }
-        img.onerror = () => resolve()
-        img.src = player.image!
-      })
-      promises.push(playerImgPromise)
-    }
-
-    // Draw team image as a badge with improved sizing
-    if (player.teamImage) {
-      const teamImgPromise = new Promise<void>((resolve) => {
-        const teamImg = new Image()
-        teamImg.crossOrigin = "anonymous"
-
-        teamImg.onload = () => {
-          const teamImgSize = 50 // Increased from 40 to 50
-          const playerImgSize = 130
-          const playerImgX = side === "left" ? bannerX - playerImgSize - 20 : bannerX + bannerWidth + 20
-          const teamImgX = playerImgX + (side === "left" ? playerImgSize - teamImgSize + 5 : -5)
-          const teamImgY = bannerY - 25 + playerImgSize - teamImgSize + 5
-
-          // Draw white circle background for team logo
-          ctx.fillStyle = "#ffffff"
-          ctx.beginPath()
-          ctx.arc(teamImgX + teamImgSize / 2, teamImgY + teamImgSize / 2, teamImgSize / 2 + 2, 0, Math.PI * 2)
-          ctx.fill()
-
-          ctx.save()
-          ctx.beginPath()
-          ctx.arc(teamImgX + teamImgSize / 2, teamImgY + teamImgSize / 2, teamImgSize / 2, 0, Math.PI * 2)
-          ctx.clip()
-
-          // Object-fit: contain for team image
-          const scale = Math.min(teamImgSize / teamImg.width, teamImgSize / teamImg.height)
-          const scaledWidth = teamImg.width * scale
-          const scaledHeight = teamImg.height * scale
-          const drawX = teamImgX + (teamImgSize - scaledWidth) / 2
-          const drawY = teamImgY + (teamImgSize - scaledHeight) / 2
-
-          ctx.drawImage(teamImg, drawX, drawY, scaledWidth, scaledHeight)
-          ctx.restore()
-
-          // Border for team image
-          ctx.strokeStyle = "#1e40af"
-          ctx.lineWidth = 2
-          ctx.beginPath()
-          ctx.arc(teamImgX + teamImgSize / 2, teamImgY + teamImgSize / 2, teamImgSize / 2, 0, Math.PI * 2)
-          ctx.stroke()
-
-          resolve()
-        }
-        teamImg.onerror = () => resolve()
-        teamImg.src = player.teamImage!
-      })
-      promises.push(teamImgPromise)
-    }
-
-    await Promise.all(promises)
-  }
-
-  // Draw individual player in gameweek poster
-  const drawPlayerInGameweek = async (
-    ctx: CanvasRenderingContext2D,
-    player: Player,
-    x: number,
-    y: number,
-    side: "left" | "right",
-  ) => {
-    const bannerWidth = 400
-    const bannerHeight = 60
-    const bannerX = side === "left" ? x - bannerWidth : x
-    const bannerY = y - bannerHeight / 2
-
-    ctx.fillStyle = "#1e40af"
-    ctx.fillRect(bannerX, bannerY, bannerWidth, bannerHeight)
-
-    ctx.strokeStyle = "#3b82f6"
-    ctx.lineWidth = 2
-    ctx.strokeRect(bannerX, bannerY, bannerWidth, bannerHeight)
-
-    ctx.fillStyle = "#ffffff"
-    ctx.font = "bold 24px 'DM Sans', Arial, sans-serif"
-    ctx.textAlign = side === "left" ? "right" : "left"
-    const textX = side === "left" ? bannerX + bannerWidth - 20 : bannerX + 20
-    ctx.fillText(player.name.toUpperCase(), textX, y + 8)
-
-    const promises: Promise<void>[] = []
-
-    // Draw player image with increased size and object-fit contain
-    if (player.image) {
-      const playerImgPromise = new Promise<void>((resolve) => {
-        const img = new Image()
-        img.crossOrigin = "anonymous"
-
-        img.onload = () => {
-          const imgSize = 100 // Increased from 80 to 100
-          const imgX = side === "left" ? bannerX - imgSize - 10 : bannerX + bannerWidth + 10
-          const imgY = y - imgSize / 2
-
-          ctx.save()
-          ctx.beginPath()
-          ctx.arc(imgX + imgSize / 2, imgY + imgSize / 2, imgSize / 2, 0, Math.PI * 2)
-          ctx.clip()
-
-          // Object-fit: contain implementation
-          const scale = Math.min(imgSize / img.width, imgSize / img.height)
-          const scaledWidth = img.width * scale
-          const scaledHeight = img.height * scale
-          const drawX = imgX + (imgSize - scaledWidth) / 2
-          const drawY = imgY + (imgSize - scaledHeight) / 2
-
-          ctx.drawImage(img, drawX, drawY, scaledWidth, scaledHeight)
-          ctx.restore()
-
-          ctx.strokeStyle = "#ffffff"
-          ctx.lineWidth = 3
-          ctx.beginPath()
-          ctx.arc(imgX + imgSize / 2, imgY + imgSize / 2, imgSize / 2, 0, Math.PI * 2)
-          ctx.stroke()
-
-          resolve()
-        }
-        img.onerror = () => resolve()
-        img.src = player.image!
-      })
-      promises.push(playerImgPromise)
-    }
-
-    // Draw team image as a badge with improved sizing
-    if (player.teamImage) {
-      const teamImgPromise = new Promise<void>((resolve) => {
-        const teamImg = new Image()
-        teamImg.crossOrigin = "anonymous"
-
-        teamImg.onload = () => {
-          const teamImgSize = 40 // Increased from 32 to 40
-          const playerImgSize = 100
-          const playerImgX = side === "left" ? bannerX - playerImgSize - 10 : bannerX + bannerWidth + 10
-          const teamImgX = playerImgX + (side === "left" ? playerImgSize - teamImgSize + 3 : -3)
-          const teamImgY = y - playerImgSize / 2 + playerImgSize - teamImgSize + 3
-
-          // Draw white circle background for team logo
-          ctx.fillStyle = "#ffffff"
-          ctx.beginPath()
-          ctx.arc(teamImgX + teamImgSize / 2, teamImgY + teamImgSize / 2, teamImgSize / 2 + 2, 0, Math.PI * 2)
-          ctx.fill()
-
-          ctx.save()
-          ctx.beginPath()
-          ctx.arc(teamImgX + teamImgSize / 2, teamImgY + teamImgSize / 2, teamImgSize / 2, 0, Math.PI * 2)
-          ctx.clip()
-
-          // Object-fit: contain for team image
-          const scale = Math.min(teamImgSize / teamImg.width, teamImgSize / teamImg.height)
-          const scaledWidth = teamImg.width * scale
-          const scaledHeight = teamImg.height * scale
-          const drawX = teamImgX + (teamImgSize - scaledWidth) / 2
-          const drawY = teamImgY + (teamImgSize - scaledHeight) / 2
-
-          ctx.drawImage(teamImg, drawX, drawY, scaledWidth, scaledHeight)
-          ctx.restore()
-
-          // Border for team image
-          ctx.strokeStyle = "#1e40af"
-          ctx.lineWidth = 2
-          ctx.beginPath()
-          ctx.arc(teamImgX + teamImgSize / 2, teamImgY + teamImgSize / 2, teamImgSize / 2, 0, Math.PI * 2)
-          ctx.stroke()
-
-          resolve()
-        }
-        teamImg.onerror = () => resolve()
-        teamImg.src = player.teamImage!
-      })
-      promises.push(teamImgPromise)
-    }
-
-    await Promise.all(promises)
-  }
-
-  // Draw Champions League ball
-  const drawChampionsLeagueBall = async (ctx: CanvasRenderingContext2D, centerX: number, y: number) => {
-    const ballRadius = 60
-
-    ctx.fillStyle = "#ffffff"
-    ctx.beginPath()
-    ctx.arc(centerX, y, ballRadius, 0, Math.PI * 2)
-    ctx.fill()
-
-    ctx.strokeStyle = "#cccccc"
-    ctx.lineWidth = 2
-    ctx.stroke()
-
-    ctx.fillStyle = "#1e40af"
-    ctx.font = "bold 16px 'Space Grotesk', Arial, sans-serif"
-    ctx.textAlign = "center"
-    ctx.fillText("★", centerX, y - 20)
-    ctx.fillText("★", centerX - 25, y + 10)
-    ctx.fillText("★", centerX + 25, y + 10)
-    ctx.fillText("★", centerX - 15, y + 25)
-    ctx.fillText("★", centerX + 15, y + 25)
-  }
-
-  // Group fixtures by gameweek
   const fixturesByGameweek = fixtures.reduce(
     (acc, fixture) => {
       if (!acc[fixture.gameweek]) acc[fixture.gameweek] = []
@@ -752,13 +243,11 @@ export default function FixtureGenerator() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 p-4">
       <div className="max-w-6xl mx-auto space-y-8">
-        {/* Header */}
         <div className="text-center space-y-4">
           <h1 className="text-4xl font-bold text-white">Fixture Generator</h1>
           <p className="text-slate-300">Create dynamic tournament fixtures and download individual posters</p>
         </div>
 
-        {/* Player Management */}
         <Card className="bg-slate-800/50 border-slate-700">
           <CardHeader>
             <CardTitle className="text-white flex items-center gap-2">
@@ -767,7 +256,6 @@ export default function FixtureGenerator() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* Add Player */}
             <div className="flex gap-2">
               <Input
                 placeholder="Enter player name"
@@ -778,6 +266,14 @@ export default function FixtureGenerator() {
               />
               <Button onClick={addPlayer} className="bg-blue-600 hover:bg-blue-700">
                 Add Player
+              </Button>
+              <Button
+                onClick={addDummyPlayers}
+                disabled={dummyPlayers.every((player) => players.some((existing) => existing.id === player.id))}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                <Users className="w-4 h-4" />
+                Add Dummy Players
               </Button>
             </div>
 
@@ -811,41 +307,58 @@ export default function FixtureGenerator() {
               <span className="text-slate-400 text-sm">(Each pair plays twice - doubles the fixtures)</span>
             </div>
 
-            {/* Players List */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {players.map((player) => (
                 <Card key={player.id} className="bg-slate-700/50 border-slate-600">
                   <CardContent className="p-4 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-white font-medium">{player.name}</span>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={player.name}
+                        onChange={(e) => updatePlayer(player.id, { name: e.target.value })}
+                        onBlur={() => {
+                          const trimmed = player.name.trim()
+                          updatePlayer(player.id, { name: trimmed || "Player" })
+                        }}
+                        className="bg-slate-700 border-slate-600 text-white font-medium"
+                        aria-label="Player name"
+                      />
                       <Button size="sm" variant="destructive" onClick={() => removePlayer(player.id)}>
                         <Trash2 className="w-4 h-4" />
                       </Button>
                     </div>
 
-                    {/* Player Image */}
                     <div className="space-y-2">
                       <Label className="text-slate-300 text-sm font-medium">Player Image</Label>
-                      {player.image ? (
-                        <div className="relative w-16 h-16 mx-auto">
-                          <img
-                            src={player.image || "/placeholder.svg"}
-                            alt={player.name}
-                            className="w-16 h-16 rounded-full object-cover"
-                          />
-                          {player.teamImage && (
+                      <div className="relative w-16 h-16 mx-auto">
+                        {player.image ? (
+                          <>
                             <img
-                              src={player.teamImage || "/placeholder.svg"}
-                              alt={`${player.name} team`}
-                              className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full object-cover border-2 border-white bg-white"
+                              src={player.image || "/placeholder.svg"}
+                              alt={player.name}
+                              className="w-16 h-16 rounded-full object-cover"
                             />
-                          )}
-                        </div>
-                      ) : (
-                        <div className="w-16 h-16 rounded-full bg-slate-600 mx-auto flex items-center justify-center">
-                          <span className="text-slate-400 text-xs">No Image</span>
-                        </div>
-                      )}
+                            {player.teamImage && (
+                              <img
+                                src={player.teamImage || "/placeholder.svg"}
+                                alt={`${player.name} team`}
+                                className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full object-cover border-2 border-white bg-white"
+                              />
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => updatePlayer(player.id, { image: null })}
+                              className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-slate-900 text-slate-200 border border-slate-500 flex items-center justify-center"
+                              aria-label={`Remove ${player.name} image`}
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </>
+                        ) : (
+                          <div className="w-16 h-16 rounded-full bg-slate-600 flex items-center justify-center">
+                            <span className="text-slate-400 text-xs">No Image</span>
+                          </div>
+                        )}
+                      </div>
 
                       <input
                         type="file"
@@ -853,6 +366,7 @@ export default function FixtureGenerator() {
                         onChange={(e) => {
                           const file = e.target.files?.[0]
                           if (file) handleImageUpload(player.id, file, "player")
+                          e.target.value = ""
                         }}
                         className="hidden"
                         id={`upload-player-${player.id}`}
@@ -862,24 +376,35 @@ export default function FixtureGenerator() {
                         className="cursor-pointer flex items-center justify-center gap-1 text-xs text-blue-400 hover:text-blue-300"
                       >
                         <Upload className="w-3 h-3" />
-                        Upload Player Image
+                        {player.image ? "Change Player Image" : "Upload Player Image"}
                       </Label>
                     </div>
 
-                    {/* Team Image */}
                     <div className="space-y-2">
                       <Label className="text-slate-300 text-sm font-medium">Team Logo</Label>
-                      {player.teamImage ? (
-                        <img
-                          src={player.teamImage || "/placeholder.svg"}
-                          alt={`${player.name} team`}
-                          className="w-12 h-12 rounded-full object-cover mx-auto border-2 border-slate-500"
-                        />
-                      ) : (
-                        <div className="w-12 h-12 rounded-full bg-slate-600 mx-auto flex items-center justify-center">
-                          <span className="text-slate-400 text-xs">No Logo</span>
-                        </div>
-                      )}
+                      <div className="relative w-12 h-12 mx-auto">
+                        {player.teamImage ? (
+                          <>
+                            <img
+                              src={player.teamImage || "/placeholder.svg"}
+                              alt={`${player.name} team`}
+                              className="w-12 h-12 rounded-full object-cover border-2 border-slate-500"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => updatePlayer(player.id, { teamImage: null })}
+                              className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-slate-900 text-slate-200 border border-slate-500 flex items-center justify-center"
+                              aria-label={`Remove ${player.name} team logo`}
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </>
+                        ) : (
+                          <div className="w-12 h-12 rounded-full bg-slate-600 flex items-center justify-center">
+                            <span className="text-slate-400 text-xs">No Logo</span>
+                          </div>
+                        )}
+                      </div>
 
                       <input
                         type="file"
@@ -887,6 +412,7 @@ export default function FixtureGenerator() {
                         onChange={(e) => {
                           const file = e.target.files?.[0]
                           if (file) handleImageUpload(player.id, file, "team")
+                          e.target.value = ""
                         }}
                         className="hidden"
                         id={`upload-team-${player.id}`}
@@ -896,7 +422,7 @@ export default function FixtureGenerator() {
                         className="cursor-pointer flex items-center justify-center gap-1 text-xs text-green-400 hover:text-green-300"
                       >
                         <Upload className="w-3 h-3" />
-                        Upload Team Logo
+                        {player.teamImage ? "Change Team Logo" : "Upload Team Logo"}
                       </Label>
                     </div>
                   </CardContent>
@@ -904,7 +430,6 @@ export default function FixtureGenerator() {
               ))}
             </div>
 
-            {/* Generate Fixtures Button */}
             {players.length >= 2 && (
               <div className="space-y-2">
                 <Button onClick={generateFixtures} className="w-full bg-green-600 hover:bg-green-700" size="lg">
@@ -924,7 +449,6 @@ export default function FixtureGenerator() {
           </CardContent>
         </Card>
 
-        {/* Round Selector - Always visible when fixtures exist */}
         {fixtures.length > 0 && (
           <Card className="bg-slate-800/50 border-slate-700">
             <CardContent className="p-6">
@@ -971,7 +495,6 @@ export default function FixtureGenerator() {
           </Card>
         )}
 
-        {/* Fixtures Display */}
         {fixtures.length > 0 && (
           <div className="space-y-6">
             {Object.entries(fixturesByGameweek)
@@ -1043,7 +566,6 @@ export default function FixtureGenerator() {
           </div>
         )}
 
-        {/* Hidden Canvas for Image Generation */}
         <canvas ref={canvasRef} className="hidden" />
       </div>
     </div>
